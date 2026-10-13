@@ -29,7 +29,7 @@ def index():
         default_preset=DEFAULT_PRESET,
         client_config={"presets": client_config(), **enhance.client_config()},
         denoise_levels=enhance.DENOISE,
-        sharpen_levels=enhance.SHARPEN,
+        adjustments=enhance.ADJUSTMENTS,
         quality=(QUALITY_MIN, QUALITY_MAX, QUALITY_DEFAULT),
         scale=(SCALE_MIN, SCALE_MAX),
     )
@@ -73,11 +73,13 @@ def optimize():
     # One line per request: settings and sizes only, never file names or content.
     current_app.logger.info(
         "optimize: %s %dx%d %d B -> %s %dx%d %d B | quality=%d preset=%s scale=%d%% "
-        "strip=%d orient=%d lossless=%d reduce=%d denoise=%s sharpen=%s kept_original=%d | %.2fs",
+        "strip=%d orient=%d lossless=%d reduce=%d denoise=%s brightness=%d contrast=%d "
+        "blur=%d sharpen=%d flattened=%d kept_original=%d | %.2fs",
         info["original_format"], info["original_width"], info["original_height"], original_size,
         info["format"], info["width"], info["height"], optimized_size,
         opts.quality, opts.preset, opts.scale, opts.strip_metadata, opts.auto_orient,
-        opts.lossless, opts.reduce_colors, opts.denoise, opts.sharpen, info["kept_original"],
+        opts.lossless, opts.reduce_colors, opts.denoise, opts.brightness, opts.contrast,
+        opts.blur, opts.sharpen, info["flattened"], info["kept_original"],
         time.perf_counter() - started)
 
     # send_file streams dst and closes it (which deletes it) once sending is done.
@@ -94,7 +96,11 @@ def optimize():
         "X-Quality": str(info["quality"]),
         "X-Preset": info["preset"],
         "X-Denoise": info["denoise"],
-        "X-Sharpen": info["sharpen"],
+        "X-Brightness": str(info["brightness"]),
+        "X-Contrast": str(info["contrast"]),
+        "X-Blur": str(info["blur"]),
+        "X-Sharpen": str(info["sharpen"]),
+        "X-Flattened": "1" if info["flattened"] else "0",
         "X-Kept-Original": "1" if info["kept_original"] else "0",
     })
     return response

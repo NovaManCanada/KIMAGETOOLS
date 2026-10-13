@@ -1,6 +1,6 @@
-"""Optional enhancements: denoise (OpenCV) and sharpen (Pillow).
+"""Optional enhancements: denoise (OpenCV) and adjustments (Pillow).
 
-Both run on an 8-bit working copy (L or RGB, with any alpha channel split off
+All run on an 8-bit working copy (L or RGB, with any alpha channel split off
 and reattached untouched), so every input mode is supported:
 
 - denoise   OpenCV non-local means. Removes sensor grain (e.g. night/IR camera
@@ -11,17 +11,23 @@ and reattached untouched), so every input mode is supported:
             same strength and speed as pure greyscale and keep their colours.
             Slow: ~0.4 s per megapixel for grey images, ~1.2 s for colour, so
             it's limited to DENOISE_MAX_PIXELS.
-- sharpen   Pillow unsharp mask. The threshold skips low-contrast detail, so
-            edges are sharpened more than grain.
+- adjust    slider adjustments, applied in this order:
+              brightness  -100..100  multiplies pixel values by 1 + v/100
+              contrast    -100..100  scales distance from mean grey by 1 + v/100
+              blur        0..100     Gaussian blur, radius v/10 px (up to 10 px)
+              sharpen     0..100     unsharp mask, amount 2v % (up to 200 %),
+                                     radius 1 + v/100 px; its threshold skips
+                                     low-contrast detail, so edges are sharpened
+                                     more than grain
 
 Order in the pipeline (see imaging.optimize_image): denoise runs at whichever
 of the original and output resolutions is smaller (cheaper, and shrinking
-already averages noise away), and sharpening runs last, after resizing, since
-resizing softens the image.
+already averages noise away). Adjustments run after resizing, so blur and
+sharpen radii are in output pixels and sharpening isn't softened by the resize.
 """
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter
 
 DENOISE_MAX_PIXELS = 8_500_000  # ~10 s worst case; covers 4K UHD (3840×2160)
 # An image "has colour" if more than this share of pixels has R/G/B spread > 6.
@@ -36,12 +42,19 @@ DENOISE = {
 }
 _TEMPLATE_WINDOW, _SEARCH_WINDOW = 7, 21
 
-SHARPEN = {
-    "off": None,
-    "light": {"label": "Light", "radius": 1.0, "percent": 60, "threshold": 4},
-    "medium": {"label": "Medium", "radius": 1.4, "percent": 100, "threshold": 3},
-    "strong": {"label": "Strong", "radius": 2.0, "percent": 150, "threshold": 3},
+# Slider adjustments: name -> (min, max). The neutral value is always 0.
+ADJUSTMENTS = {
+    "brightness": (-100, 100),
+    "contrast": (-100, 100),
+    "blur": (0, 100),
+    "sharpen": (0, 100),
 }
+_SHARPEN_THRESHOLD = 3
+
+
+def sharpen_params(value):
+    return {"radius": round(1 + value / 100, 2), "percent": 2 * value,
+            "threshold": _SHARPEN_THRESHOLD}
 
 
 def _split_alpha(img):
@@ -106,13 +119,19 @@ def denoise(img, level):
     return _join_alpha(Image.merge("YCbCr", bands).convert("RGB"), alpha)
 
 
-def sharpen(img, level):
-    params = SHARPEN[level]
-    if params is None:
+def adjust(img, brightness=0, contrast=0, blur=0, sharpen=0):
+    """Apply the slider adjustments. All zero returns the image untouched."""
+    if not (brightness or contrast or blur or sharpen):
         return img
-    base, alpha = _split_alpha(img)
-    out = base.filter(ImageFilter.UnsharpMask(
-        radius=params["radius"], percent=params["percent"], threshold=params["threshold"]))
+    out, alpha = _split_alpha(img)
+    if brightness:
+        out = ImageEnhance.Brightness(out).enhance(1 + brightness / 100)
+    if contrast:
+        out = ImageEnhance.Contrast(out).enhance(1 + contrast / 100)
+    if blur:
+        out = out.filter(ImageFilter.GaussianBlur(blur / 10))
+    if sharpen:
+        out = out.filter(ImageFilter.UnsharpMask(**sharpen_params(sharpen)))
     return _join_alpha(out, alpha)
 
 
@@ -124,11 +143,7 @@ def client_config():
                       "describe": f"OpenCV non-local means, strength {v['h']}"}
             for k, v in DENOISE.items()
         },
-        "sharpen": {
-            k: v and {"label": v["label"],
-                      "describe": (f"unsharp mask: radius {v['radius']}, {v['percent']}%, "
-                                   f"threshold {v['threshold']}")}
-            for k, v in SHARPEN.items()
-        },
+        "adjustments": {k: list(v) for k, v in ADJUSTMENTS.items()},
+        "sharpen_threshold": _SHARPEN_THRESHOLD,
         "denoise_max_pixels": DENOISE_MAX_PIXELS,
     }

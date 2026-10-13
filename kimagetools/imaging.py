@@ -19,6 +19,14 @@ def _flatten(img, background=(255, 255, 255)):
     return img.convert("RGB")
 
 
+def _has_transparency(img):
+    """True if the image has an alpha channel with any pixel not fully opaque."""
+    if img.mode in ("RGBA", "LA", "PA") or (img.mode == "P" and "transparency" in img.info):
+        alpha = img.convert("RGBA").getchannel("A") if img.mode in ("P", "PA") else img.getchannel("A")
+        return alpha.getextrema()[0] < 255
+    return False
+
+
 def _has_metadata(info):
     """True if Pillow found EXIF, XMP, comments or text chunks in the image."""
     keys = ("exif", "xmp", "XML:com.adobe.xmp", "comment")
@@ -73,8 +81,9 @@ def optimize_image(src_path, dst, opts=Options()):
         out_img = out_img.resize(size, preset["resample"], reducing_gap=gap)
     if opts.denoise != "off" and opts.scale <= 100:
         out_img = enhance.denoise(out_img, opts.denoise)
-    # Sharpen last: resizing softens the image.
-    out_img = enhance.sharpen(out_img, opts.sharpen)
+    # Adjustments after resizing: radii are in output pixels, and resizing
+    # would soften the sharpening.
+    out_img = enhance.adjust(out_img, **opts.adjustments)
 
     save_kwargs = {}
     # Always keep the colour profile: dropping it visibly shifts colours.
@@ -84,8 +93,11 @@ def optimize_image(src_path, dst, opts=Options()):
         # With auto-orient on, exif_transpose already reset the Orientation tag.
         save_kwargs["exif"] = out_img.getexif().tobytes()
 
+    flattened = False
     if pil_format == "JPEG":
         if out_img.mode not in ("RGB", "L", "CMYK"):
+            # JPEG has no transparency: composite onto white.
+            flattened = _has_transparency(out_img)
             out_img = _flatten(out_img)
         save_kwargs.update(quality=quality, **preset["jpeg"])
     elif pil_format == "PNG":
@@ -111,7 +123,7 @@ def optimize_image(src_path, dst, opts=Options()):
     # never when that would hand back metadata the user asked to strip.
     kept_original = False
     if (source_key == fmt_key and out_img.size == original_size
-            and opts.denoise == "off" and opts.sharpen == "off"  # those were asked for
+            and opts.denoise == "off" and not any(opts.adjustments.values())  # changes were asked for
             and not (opts.strip_metadata and has_metadata)
             and dst.tell() >= src_path.stat().st_size):
         dst.seek(0)
@@ -133,7 +145,8 @@ def optimize_image(src_path, dst, opts=Options()):
         "quality": quality,
         "preset": opts.preset,
         "denoise": opts.denoise,
-        "sharpen": opts.sharpen,
+        "flattened": flattened,
+        **opts.adjustments,
         "kept_original": kept_original,
     }
 

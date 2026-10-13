@@ -148,3 +148,12 @@ input[type=range]:disabled { opacity: .4; }
 .swipe-stage.zoomed { display: block; overflow: auto; }
 .swipe-stage.pixelated img { image-rendering: pixelated; }
 .pane.pixelated img { image-rendering: pixelated; }
+
+/* Adjustment sliders */
+.adjustments { border: 0; padding: 0; margin: 20px 0 0; }
+.adjustments legend { font-weight: 600; font-size: .9rem; padding: 0; display: flex; align-items: center; gap: 10px; }
+.adjustments .grid { margin-top: 8px; }
+button.link {
+  background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: .85rem;
+  cursor: pointer; text-decoration: underline;
+}

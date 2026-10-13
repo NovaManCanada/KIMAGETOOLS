@@ -35,9 +35,9 @@
       </fieldset>
 
       <div class="grid">
-        <label class="field">Output format
+        <label class="field">Convert to
           <select name="format" id="format">
-            <option value="original">Same as original</option>
+            <option value="original" id="format-keep">Keep original format</option>
             {% for f in formats %}<option value="{{ f }}">{{ f|upper }}</option>{% endfor %}
           </select>
         </label>
@@ -57,13 +57,26 @@
           </select>
           <span class="hint">Removes grain, e.g. night camera shots. Slower</span>
         </label>
-        <label class="field">Sharpen
-          <select name="sharpen" id="sharpen">
-            {% for key, d in sharpen_levels.items() %}<option value="{{ key }}">{{ d.label if d else "Off" }}</option>{% endfor %}
-          </select>
-          <span class="hint">Crisper edges; applied after resizing</span>
-        </label>
       </div>
+
+      <fieldset class="adjustments">
+        <legend>Adjustments <button type="button" class="link" id="adj-reset" hidden>Reset</button></legend>
+        <div class="grid">
+          {% set adj_hints = {
+            "brightness": "Darker ← → brighter",
+            "contrast": "Flatter ← → punchier",
+            "blur": "Softens detail (up to 10 px)",
+            "sharpen": "Crisper edges; skips faint grain",
+          } %}
+          {% for name, (lo, hi) in adjustments.items() %}
+          <label class="field">
+            <span>{{ name|capitalize }} <output id="{{ name }}-val">0</output></span>
+            <input type="range" name="{{ name }}" id="{{ name }}" min="{{ lo }}" max="{{ hi }}" value="0" data-adjust>
+            <span class="hint">{{ adj_hints[name] }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
 
       <div class="checks">
         <label><input type="checkbox" name="strip_metadata" value="1" checked> Strip metadata (EXIF, GPS)</label>

@@ -11,6 +11,7 @@
   const MAX_BYTES = MAX_MB * 1024 * 1024;
   const CONFIG = JSON.parse($("config").textContent);
   const PRESETS = CONFIG.presets;
+  const ADJ = Object.keys(CONFIG.adjustments);  // brightness, contrast, blur, sharpen
   // Must match validators.py.
   const MAX_OUTPUT_PIXELS = 100_000_000;
   const MAX_SIDE = { jpeg: 65500, png: 1000000, webp: 16383 };
@@ -47,12 +48,13 @@
       lossless: format === "webp" && form.elements.lossless.checked,
       reduce: format === "png" && form.elements.reduce_colors.checked,
       denoise: $("denoise").value,
-      sharpen: $("sharpen").value,
+      ...Object.fromEntries(ADJ.map((k) => [k, Number($(k).value)])),
     };
   };
 
   const snapshot = (s) => JSON.stringify([s.format, s.preset, s.quality, s.scale,
-                                          s.strip, s.orient, s.lossless, s.reduce, s.denoise, s.sharpen]);
+                                          s.strip, s.orient, s.lossless, s.reduce, s.denoise,
+                                          ...ADJ.map((k) => s[k])]);
 
   const outputSize = (s) => natural && {
     w: Math.max(1, Math.round(natural.w * s.scale / 100)),
@@ -79,6 +81,20 @@
   // Nothing is processed in the browser: this only describes what the server
   // will do with the current settings.
 
+  const signed = (v) => (v > 0 ? `+${v}` : String(v));
+  const adjustmentValue = (k, v) => (k === "blur" ? (v ? `${(v / 10).toFixed(1)} px` : "0")
+                                   : k === "sharpen" ? String(v) : signed(v));
+
+  // Human-readable list of non-neutral adjustments, in the order they're applied.
+  const adjustmentText = (s) => ADJ.filter((k) => s[k]).map((k) => {
+    if (k === "blur") return `blur ${(s.blur / 10).toFixed(1)} px`;
+    if (k === "sharpen") {
+      return `sharpen ${s.sharpen} (unsharp mask: radius ${(1 + s.sharpen / 100).toFixed(2)} px, ` +
+             `${2 * s.sharpen}%, threshold ${CONFIG.sharpen_threshold})`;
+    }
+    return `${k} ${signed(s[k])}%`;
+  });
+
   const qualityText = (s) => {
     if (s.format === "png") return "Not used for PNG";
     if (s.lossless) return `Lossless: ${s.quality} sets compression effort, not image quality`;
@@ -98,6 +114,9 @@
       : s.lossless ? "Lossless WebP: sets compression effort" : "Used by JPEG and WebP";
 
     $("scaleval").textContent = s.scale + "%";
+    for (const k of ADJ) $(`${k}-val`).textContent = adjustmentValue(k, s[k]);
+    $("adj-reset").hidden = ADJ.every((k) => s[k] === 0);
+    $("format-keep").textContent = s.source ? `Keep original (${NAMES[s.source]})` : "Keep original format";
     const out = outputSize(s);
     $("scalehint").textContent = out && s.scale !== 100
       ? `${natural.w}×${natural.h} → ${out.w}×${out.h} px` : "Aspect ratio is preserved";
@@ -115,9 +134,13 @@
         : `${natural.w}×${natural.h} → ${out.w}×${out.h} px (${s.scale}%, ${p.describe.resample})`]);
     }
     if (s.reduce) rows.push(["Colours", "Reduced to a 256-colour palette"]);
-    const dn = CONFIG.denoise[s.denoise], sh = CONFIG.sharpen[s.sharpen];
+    const dn = CONFIG.denoise[s.denoise];
     rows.push(["Denoise", dn ? `${dn.label}: ${dn.describe}${s.scale > 100 ? ", before enlarging" : s.scale < 100 ? ", after shrinking" : ""}. Takes longer` : "Off"]);
-    rows.push(["Sharpen", sh ? `${sh.label}: ${sh.describe}${s.scale !== 100 ? ", after resizing" : ""}` : "Off"]);
+    const adj = adjustmentText(s);
+    rows.push(["Adjustments", adj.length ? adj.join(" → ") : "None"]);
+    if (s.format === "jpeg" && s.source !== "jpeg") {
+      rows.push(["Transparency", "JPEG has none: any transparent areas will be filled with white. Choose PNG or WebP to keep them."]);
+    }
     rows.push(["Metadata", s.strip ? "EXIF and GPS removed (colour profile kept)" : "Kept"]);
     rows.push(["Orientation", s.orient ? "Rotated upright using EXIF"
       : s.strip ? "Left as stored. May appear rotated, since the EXIF tag is removed" : "Left as stored (EXIF tag kept)"]);
@@ -356,6 +379,19 @@
     scheduleAuto();
     render();
   };
+  $("adj-reset").addEventListener("click", () => {
+    for (const k of ADJ) $(k).value = "0";
+    $(ADJ[0]).dispatchEvent(new Event("change", { bubbles: true }));
+    $(ADJ[0]).focus();
+  });
+  // Double-click a slider to reset just that one.
+  for (const k of ADJ) {
+    $(k).addEventListener("dblclick", () => {
+      $(k).value = "0";
+      $(k).dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
   form.addEventListener("input", onSettingsChange);
   form.addEventListener("change", onSettingsChange);
 
@@ -436,12 +472,15 @@
       $("s-settings").textContent = [NAMES[fmt], PRESETS[h("X-Preset")]?.label,
         fmt === "png" || s.lossless ? null : `q${h("X-Quality")}`,
         h("X-Denoise") !== "off" ? `denoise ${h("X-Denoise")}` : null,
-        h("X-Sharpen") !== "off" ? `sharpen ${h("X-Sharpen")}` : null].filter(Boolean).join(" · ");
+        ...ADJ.filter((k) => +h(`X-${k[0].toUpperCase()}${k.slice(1)}`))
+          .map((k) => `${k} ${adjustmentValue(k, +h(`X-${k[0].toUpperCase()}${k.slice(1)}`))}`)].filter(Boolean).join(" · ");
       $("stats").hidden = false;
 
-      const note = $("note");
-      note.hidden = h("X-Kept-Original") !== "1";
-      note.textContent = "The original was already well optimized, so it was returned unchanged.";
+      const notes = [];
+      if (h("X-Kept-Original") === "1") notes.push("The original was already well optimized, so it was returned unchanged.");
+      if (h("X-Flattened") === "1") notes.push("Transparent areas were filled with white, because JPEG doesn't support transparency. Choose PNG or WebP to keep them.");
+      $("note").textContent = notes.join(" ");
+      $("note").hidden = !notes.length;
 
       const first = !newUrl;
       const oldUrl = newUrl;

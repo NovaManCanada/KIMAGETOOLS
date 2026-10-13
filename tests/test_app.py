@@ -418,7 +418,9 @@ def _edge_strength(img):
 
 def test_enhancements_off_by_default(client):
     resp = post(client, make_image(), format="png")
-    assert resp.headers["X-Denoise"] == "off" and resp.headers["X-Sharpen"] == "off"
+    assert resp.headers["X-Denoise"] == "off"
+    for name in ("Brightness", "Contrast", "Blur", "Sharpen"):
+        assert resp.headers[f"X-{name}"] == "0"
 
 
 @pytest.mark.parametrize("mode", ["RGB", "L"])
@@ -440,14 +442,15 @@ def test_sharpen_increases_edge_strength(client):
     img = Image.new("L", (200, 200), 60); img.paste(200, (60, 60, 140, 140))
     from PIL import ImageFilter
     src = _png(img.filter(ImageFilter.GaussianBlur(2)))
-    values = [_edge_strength(open_result(post(client, src, format="png", sharpen=lvl)))
-              for lvl in ("off", "light", "medium", "strong")]
+    values = [_edge_strength(open_result(post(client, src, format="png", sharpen=v)))
+              for v in (0, 25, 50, 100)]
     assert values == sorted(values) and values[0] < values[-1]
 
 
 def test_enhancements_preserve_alpha(client):
     img = _noisy(mode="RGBA"); img.putalpha(Image.linear_gradient("L").resize(img.size))
-    resp = post(client, _png(img), format="png", denoise="light", sharpen="medium")
+    resp = post(client, _png(img), format="png", denoise="light", sharpen=50,
+                brightness=30, contrast=-20, blur=10)
     out = open_result(resp)
     assert out.mode == "RGBA"
     assert out.getchannel("A").tobytes() == img.getchannel("A").tobytes()
@@ -456,7 +459,7 @@ def test_enhancements_preserve_alpha(client):
 def test_enhancements_never_return_original(client):
     src = make_image("JPEG")
     resp = post(client, src, filename="a.jpg", format="jpeg", quality=95, preset="max",
-                sharpen="light")
+                sharpen=20)
     assert resp.headers["X-Kept-Original"] == "0"
 
 
@@ -470,7 +473,9 @@ def test_denoise_size_limit(client, monkeypatch):
                 scale=50).status_code == 200
 
 
-@pytest.mark.parametrize("field,value", [("denoise", "max"), ("sharpen", "extreme")])
+@pytest.mark.parametrize("field,value", [("denoise", "max"), ("sharpen", "extreme"),
+                                         ("sharpen", "101"), ("blur", "-1"),
+                                         ("brightness", "-101"), ("contrast", "150")])
 def test_rejects_bad_enhancement_values(client, field, value):
     assert post(client, make_image(), **{field: value}).status_code == 400
 
@@ -483,4 +488,77 @@ def test_enhancements_handle_all_modes(tmp_path, mode):
     Image.new(mode, (40, 30)).save(path, fmt)
     for scale in (50, 100, 150):
         with tempfile.TemporaryFile() as out:
-            optimize_image(path, out, Options(scale=scale, denoise="light", sharpen="strong"))
+            optimize_image(path, out, Options(scale=scale, denoise="light", sharpen=100, blur=20,
+                                              brightness=30, contrast=-30))
+
+
+# --- Adjustments ------------------------------------------------------------------
+
+def _mean_std(img):
+    from PIL import ImageStat
+    st = ImageStat.Stat(img.convert("L"))
+    return st.mean[0], st.stddev[0]
+
+
+def test_brightness_slider(client):
+    src = make_image("PNG")
+    base, _ = _mean_std(open_result(post(client, src, format="png")))
+    brighter, _ = _mean_std(open_result(post(client, src, format="png", brightness=40)))
+    darker, _ = _mean_std(open_result(post(client, src, format="png", brightness=-40)))
+    assert darker < base * 0.7 and brighter > base * 1.2
+
+
+def test_contrast_slider(client):
+    src = make_image("PNG")
+    _, base = _mean_std(open_result(post(client, src, format="png")))
+    _, more = _mean_std(open_result(post(client, src, format="png", contrast=50)))
+    _, less = _mean_std(open_result(post(client, src, format="png", contrast=-50)))
+    assert less < base < more
+
+
+def test_blur_slider_softens_edges(client):
+    img = Image.new("L", (200, 200), 40); img.paste(220, (60, 60, 140, 140))
+    src = _png(img)
+    values = [_edge_strength(open_result(post(client, src, format="png", blur=v))) for v in (0, 10, 40)]
+    assert values[0] > values[1] > values[2]
+
+
+def test_adjustment_headers_echo_values(client):
+    resp = post(client, make_image(), format="png", brightness=-15, contrast=25, blur=5, sharpen=60)
+    assert [resp.headers[f"X-{n}"] for n in ("Brightness", "Contrast", "Blur", "Sharpen")] == \
+        ["-15", "25", "5", "60"]
+
+
+# --- Format conversion ------------------------------------------------------------
+
+@pytest.mark.parametrize("src_fmt", ["JPEG", "PNG", "WEBP"])
+@pytest.mark.parametrize("out_fmt,mime,ext", [("jpeg", "image/jpeg", "jpg"),
+                                              ("png", "image/png", "png"),
+                                              ("webp", "image/webp", "webp")])
+def test_converts_between_all_formats(client, src_fmt, out_fmt, mime, ext):
+    resp = post(client, make_image(src_fmt), filename="pic.img", format=out_fmt)
+    assert resp.status_code == 200
+    assert resp.mimetype == mime
+    assert open_result(resp).format == out_fmt.upper()
+    assert f"pic-optimized.{ext}" in resp.headers["Content-Disposition"]
+
+
+def test_transparent_png_to_jpeg_is_flattened_and_reported(client):
+    img = Image.new("RGBA", (40, 30), (255, 0, 0, 0)); img.paste((0, 0, 255, 255), (0, 0, 20, 30))
+    resp = post(client, _png(img), format="jpeg")
+    assert resp.headers["X-Flattened"] == "1"
+    out = open_result(resp).convert("RGB")
+    assert out.getpixel((35, 15))[0] > 240 and out.getpixel((35, 15))[1] > 240  # white, not red
+
+
+def test_opaque_rgba_to_jpeg_is_not_reported_as_flattened(client):
+    resp = post(client, _png(Image.new("RGBA", (40, 30), (9, 9, 9, 255))), format="jpeg")
+    assert resp.headers["X-Flattened"] == "0"
+
+
+@pytest.mark.parametrize("out_fmt", ["png", "webp"])
+def test_transparency_kept_for_png_and_webp(client, out_fmt):
+    img = Image.new("RGBA", (40, 30), (255, 0, 0, 0)); img.paste((0, 0, 255, 255), (0, 0, 20, 30))
+    resp = post(client, _png(img), format=out_fmt, reduce_colors="0")
+    assert resp.headers["X-Flattened"] == "0"
+    assert open_result(resp).convert("RGBA").getpixel((35, 15))[3] == 0

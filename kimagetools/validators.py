@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from PIL import Image, UnidentifiedImageError
 
-from .enhance import DENOISE, SHARPEN
+from .enhance import ADJUSTMENTS, DENOISE
 from .presets import (DEFAULT_PRESET, PRESETS, QUALITY_DEFAULT, QUALITY_MAX,
                       QUALITY_MIN)
 
@@ -112,7 +112,15 @@ class Options:
     lossless: bool = False     # WebP only
     reduce_colors: bool = False  # PNG only
     denoise: str = "off"       # a key of enhance.DENOISE
-    sharpen: str = "off"       # a key of enhance.SHARPEN
+    # Slider adjustments (see enhance.ADJUSTMENTS); 0 = unchanged.
+    brightness: int = 0
+    contrast: int = 0
+    blur: int = 0
+    sharpen: int = 0
+
+    @property
+    def adjustments(self):
+        return {k: getattr(self, k) for k in ADJUSTMENTS}
 
 
 def _int_field(form, name, default, lo, hi):
@@ -170,7 +178,7 @@ def parse_options(form):
     d = Options()
     return Options(
         denoise=_choice_field(form, "denoise", d.denoise, DENOISE),
-        sharpen=_choice_field(form, "sharpen", d.sharpen, SHARPEN),
+        **{k: _int_field(form, k, 0, lo, hi) for k, (lo, hi) in ADJUSTMENTS.items()},
         format=fmt,
         quality=_int_field(form, "quality", d.quality, QUALITY_MIN, QUALITY_MAX),
         preset=preset,
