@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image Optimizer</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="{{ url_for('static', filename='js/upload.js') }}" defer></script>
+</head>
+<body>
+<main class="empty">
+  <header class="page-header">
+    <h1>Image Optimizer</h1>
+    <p class="sub">Optimize your image with drag-and-drop simplicity</p>
+  </header>
+
+  <form id="form" class="panel"
+        data-accept="{{ accept }}" data-accepted="{{ accepted }}" data-max-mb="{{ max_mb }}">
+    <label id="drop">
+      <input type="file" id="file" name="image" accept="{{ accept }}" required>
+      <strong id="drop-text">Drop an image here or click to choose</strong><br>
+      <span class="hint">{{ accepted }} · up to {{ max_mb }} MB · SVG and GIF are not supported</span>
+    </label>
+    <p id="error" role="alert"></p>
+
+    <div class="settings" data-needs-file hidden>
+      <fieldset class="presets">
+        <legend>Preset</legend>
+        {% for key, p in presets.items() %}
+        <label class="chip">
+          <input type="radio" name="preset" value="{{ key }}"{% if key == default_preset %} checked{% endif %}>
+          <span>{{ p.label }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+
+      <div class="grid">
+        <label class="field">Output format
+          <select name="format" id="format">
+            <option value="original">Same as original</option>
+            {% for f in formats %}<option value="{{ f }}">{{ f|upper }}</option>{% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span>Quality <output id="qval">{{ quality[2] }}</output></span>
+          <input type="range" name="quality" id="quality" min="{{ quality[0] }}" max="{{ quality[1] }}" value="{{ quality[2] }}">
+          <span class="hint" id="qhint">Used by JPEG and WebP</span>
+        </label>
+        <label class="field">
+          <span>Resize <output id="scaleval">100%</output></span>
+          <input type="range" name="scale" id="scale" min="{{ scale[0] }}" max="{{ scale[1] }}" step="5" value="100">
+          <span class="hint" id="scalehint">Aspect ratio is preserved</span>
+        </label>
+        <label class="field">Denoise
+          <select name="denoise" id="denoise">
+            {% for key, d in denoise_levels.items() %}<option value="{{ key }}">{{ d.label if d else "Off" }}</option>{% endfor %}
+          </select>
+          <span class="hint">Removes grain, e.g. night camera shots. Slower</span>
+        </label>
+        <label class="field">Sharpen
+          <select name="sharpen" id="sharpen">
+            {% for key, d in sharpen_levels.items() %}<option value="{{ key }}">{{ d.label if d else "Off" }}</option>{% endfor %}
+          </select>
+          <span class="hint">Crisper edges; applied after resizing</span>
+        </label>
+      </div>
+
+      <div class="checks">
+        <label><input type="checkbox" name="strip_metadata" value="1" checked> Strip metadata (EXIF, GPS)</label>
+        <label><input type="checkbox" name="auto_orient" value="1" checked> Auto-orient from EXIF</label>
+        <label id="lossless-opt" hidden><input type="checkbox" name="lossless" value="1"> Lossless WebP</label>
+        <label id="reduce-opt" hidden><input type="checkbox" name="reduce_colors" value="1" checked> Reduce to 256 colours (much smaller PNG)</label>
+      </div>
+
+      <section class="summary" aria-live="polite">
+        <h2>What you'll get</h2>
+        <dl id="summary"></dl>
+      </section>
+
+      <div class="actions">
+        <button type="submit" id="go" disabled>Optimize</button>
+        <label class="auto"><input type="checkbox" id="auto" checked> Update automatically when settings change</label>
+      </div>
+    </div>
+  </form>
+
+  <section id="result" class="panel" data-needs-file hidden>
+    <div class="stats" id="stats" hidden>
+      <div class="stat"><div class="label">Original</div><div class="value" id="s-orig"></div></div>
+      <div class="stat"><div class="label">Optimized</div><div class="value" id="s-new"></div></div>
+      <div class="stat"><div class="label">Saved</div><div class="value" id="s-saved"></div></div>
+      <div class="stat"><div class="label">Dimensions</div><div class="value" id="s-dim"></div></div>
+      <div class="stat"><div class="label">Settings used</div><div class="value" id="s-settings"></div></div>
+    </div>
+    <p id="note" hidden></p>
+    <div class="compare-bar">
+      <div class="zoom" role="radiogroup" aria-label="View">
+        <span>View</span>
+        <label class="chip small"><input type="radio" name="view" value="side" checked><span>Side by side</span></label>
+        <label class="chip small"><input type="radio" name="view" value="swipe" id="view-swipe" disabled><span>Swipe</span></label>
+      </div>
+      <div class="zoom" role="radiogroup" aria-label="Zoom">
+        <span>Zoom</span>
+        <label class="chip small"><input type="radio" name="zoom" value="fit" checked><span>Fit</span></label>
+        <label class="chip small"><input type="radio" name="zoom" value="1"><span>100%</span></label>
+        <label class="chip small"><input type="radio" name="zoom" value="2"><span>200%</span></label>
+      </div>
+      <span class="hint" id="viewhint"></span>
+    </div>
+
+    <div class="compare" id="compare-side">
+      <figure>
+        <figcaption>Before <span class="dims" id="dim-orig"></span></figcaption>
+        <div class="pane" id="pane-orig">
+          <img id="img-orig" alt="Uploaded image" hidden>
+          <div class="placeholder" id="ph-orig">No image selected yet</div>
+        </div>
+      </figure>
+      <figure>
+        <figcaption>After <span class="dims" id="dim-new"></span> <span class="stale-badge" id="stale" hidden>Settings changed. Optimize again to update.</span></figcaption>
+        <div class="pane" id="pane-new">
+          <img id="img-new" alt="Optimized image" hidden>
+          <div class="placeholder" id="ph-new">Click Optimize to create the After image</div>
+        </div>
+      </figure>
+    </div>
+
+    <figure class="swipe" id="compare-swipe" hidden>
+      <figcaption class="swipe-labels"><span>◀ Before</span><span id="swipe-note" hidden>After is scaled to match the original so the same spot lines up</span><span>After ▶</span></figcaption>
+      <div class="pane swipe-stage" id="swipe-stage">
+        <div class="swipe-inner" id="swipe-inner">
+          <img id="sw-before" alt="Before">
+          <img id="sw-after" alt="After">
+          <div class="swipe-handle" id="swipe-handle" role="slider" tabindex="0"
+               aria-label="Divider between Before and After" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
+        </div>
+      </div>
+    </figure>
+    <div class="actions"><a class="btn" id="download" hidden>Download</a></div>
+  </section>
+</main>
+<script type="application/json" id="config">{{ client_config|tojson }}</script>
+</body>
+</html>

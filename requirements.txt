@@ -1,0 +1,8 @@
+# Runtime dependencies (tested versions noted; ~= allows compatible updates)
+Flask~=3.1            # 3.1.3
+Flask-Limiter~=4.1    # 4.1.1 - rate limiting
+Pillow~=12.3          # 12.3.0 - all image I/O and processing
+
+# Denoising (kimagetools/enhance.py); also available for future features.
+opencv-python-headless~=5.0   # 5.0.0.93
+numpy~=2.5                    # 2.5.4
