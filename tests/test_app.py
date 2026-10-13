@@ -352,6 +352,15 @@ def test_index_shows_before_and_after_panes(client):
     assert 'accept="image/jpeg,image/png,image/webp"' in html
 
 
+def test_index_offers_comparison_views(client):
+    html = client.get("/").get_data(as_text=True)
+    for view in ("side", "swipe", "diff"):
+        assert f'name="view" value="{view}"' in html
+    # Swipe and Difference stay disabled until there's an After image.
+    assert 'id="view-diff" disabled' in html and 'id="view-swipe" disabled' in html
+    assert 'id="diff-canvas"' in html and 'id="amp"' in html
+
+
 @pytest.mark.parametrize("mode", ["RGB", "RGBA"])
 def test_opencv_roundtrip(mode):
     img = Image.effect_noise((32, 24), 50).convert(mode)

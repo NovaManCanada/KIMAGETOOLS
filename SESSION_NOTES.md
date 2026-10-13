@@ -102,7 +102,6 @@ There are no browser tests in the repo. Checks were run with Playwright from a t
 
 ## Open ideas / not done
 
-- **Difference view:** highlight what compression changed. Offered but not built.
 - **Max width/height fields:** removed in favour of percentage resize; could return alongside it.
 - **libimagequant:** missing from this Pillow build, so Max quality PNG colour reduction falls back to the Balanced quantizer.
 - **Production deployment:** use `gunicorn app:app`, set `KIMAGETOOLS_RATELIMIT_STORAGE=redis://…` when running several workers, and set `KIMAGETOOLS_TRUSTED_PROXIES` behind nginx.
@@ -134,3 +133,21 @@ Implementing advanced features.
 - **Tests:** 116 pass. New ones cover each slider, every format-conversion pair, and transparency handling.
 - **Firefox (Playwright):** checked with real mouse drags on the sliders, using the trail-cam photo and a transparent PNG.
 - **Test-script pitfalls:** grab a range input's thumb, not its edge pixel. Wait for the `/optimize` response rather than for text left over from the previous result.
+
+## SESSION 3
+
+**Date:** 2026-10-13
+**Focus:** the Difference view from "Open ideas", chosen because it answers the session 1 "quality doesn't change" problem directly: it shows the change even when grain hides it.
+
+- **What it does:** a third View, **Difference**. It shows a per-pixel change map over a dim copy of the Before, with an Amplify slider (1–50×, default 10×) and stats: PSNR and the % of pixels changed by more than 2%.
+- **Client-side only:** no server or API changes, and it doesn't count toward the rate limit.
+  - Both images are drawn onto white at the Before's size, as in Swipe. Transparency that JPEG filled with white therefore isn't reported as change.
+  - The per-pixel maximum channel change is cached, keyed on the After `<img>`'s `currentSrc` and not on `newUrl`. During an auto-update `newUrl` changes before the new image loads, so keying on it would cache the old After under the new URL.
+  - Amplify only re-colours the cached map.
+  - Images over 16 MP are compared at a reduced size, which the stats line says.
+- **Resizing:** a resized After is scaled back up, so scaling itself shows up as change, and the stats line says so.
+- **Checks:**
+  - **Tests:** 117 pass (adds a markup check).
+  - **Firefox (Playwright):** real clicks on the sliders, using the previous session's scratchpad env.
+  - **Trail-cam photo:** q85 gives 35.6 dB and q1 gives 20.6 dB. The JPEG block grid and ringing are clearly visible at q85.
+  - **Also verified:** 200% zoom scrolls and drag-pans, and a new file falls back to Side by side.

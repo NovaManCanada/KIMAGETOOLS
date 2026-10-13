@@ -111,6 +111,7 @@
         <span>View</span>
         <label class="chip small"><input type="radio" name="view" value="side" checked><span>Side by side</span></label>
         <label class="chip small"><input type="radio" name="view" value="swipe" id="view-swipe" disabled><span>Swipe</span></label>
+        <label class="chip small"><input type="radio" name="view" value="diff" id="view-diff" disabled><span>Difference</span></label>
       </div>
       <div class="zoom" role="radiogroup" aria-label="Zoom">
         <span>Zoom</span>
@@ -147,6 +148,19 @@
           <div class="swipe-handle" id="swipe-handle" role="slider" tabindex="0"
                aria-label="Divider between Before and After" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></div>
         </div>
+      </div>
+    </figure>
+    <figure class="diff" id="compare-diff" hidden>
+      <figcaption class="diff-bar">
+        <label class="field diff-amp">
+          <span>Amplify <output id="ampval">10×</output></span>
+          <input type="range" id="amp" min="1" max="50" value="10" aria-describedby="diff-legend">
+        </label>
+        <span class="hint" id="diff-legend">Black: unchanged. Red to yellow: changed, brightest where the change is largest.</span>
+      </figcaption>
+      <p class="diff-stats" id="diff-stats" aria-live="polite"></p>
+      <div class="pane diff-stage" id="diff-stage">
+        <canvas id="diff-canvas" aria-label="Map of pixels changed between Before and After"></canvas>
       </div>
     </figure>
     <div class="actions"><a class="btn" id="download" hidden>Download</a></div>

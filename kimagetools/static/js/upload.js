@@ -20,6 +20,7 @@
   const PH_NEW = "Click Optimize to create the After image";
 
   let origUrl = null, newUrl = null;
+  let diffData = null;  // Difference view cache: { src, w, h, delta, base }
   let pending = null;        // AbortController of the request in flight, if any
   let autoTimer = null;      // debounce timer for automatic updates
   let natural = null;        // {w, h} of the selected image, once it has loaded
@@ -171,6 +172,7 @@
     resultFor = null;
     $("img-new").hidden = true; $("img-new").removeAttribute("src");
     $("sw-after").removeAttribute("src");  // swipe keeps showing the Before meanwhile
+    diffData = null;
     layout();
     $("ph-new").hidden = false; $("ph-new").textContent = text;
     $("pane-new").classList.remove("busy");
@@ -200,10 +202,12 @@
   // Panes scroll together, proportionally, so they stay on the same spot.
   // Swipe: the After is laid over the Before at the Before's size (so the same
   // spot lines up even if it was resized) and revealed right of a divider.
+  // Difference: a map of how much each pixel changed, at the Before's size too.
 
   const panes = [$("pane-orig"), $("pane-new")];
   const imgs = [$("img-orig"), $("img-new")];
   const stage = $("swipe-stage"), inner = $("swipe-inner"), handle = $("swipe-handle");
+  const diffStage = $("diff-stage"), diffCanvas = $("diff-canvas");
   let zoom = 0;        // 0 = fit
   let view = "side";
   let split = 50;      // swipe divider position, % from the left
@@ -242,6 +246,17 @@
     $("swipe-note").hidden = !a || (a.w === b.w && a.h === b.h);
   };
 
+  const layoutDiff = () => {
+    const b = sizeOf(imgs[0]);
+    if (!b || !diffStage.clientWidth) return;
+    const scale = zoom || Math.min(diffStage.clientWidth / b.w, diffStage.clientHeight / b.h, 1);
+    diffCanvas.style.width = Math.round(b.w * scale) + "px";
+    diffCanvas.style.height = Math.round(b.h * scale) + "px";
+    diffStage.classList.toggle("zoomed", !!zoom);
+    diffStage.classList.toggle("pixelated", zoom >= 2);
+    computeDiff();
+  };
+
   const setSplit = (value) => {
     split = Math.min(100, Math.max(0, value));
     inner.style.setProperty("--split", split + "%");
@@ -249,11 +264,13 @@
   };
 
   const layout = () => {
-    const swipe = view === "swipe";
-    $("compare-side").hidden = swipe;
+    const swipe = view === "swipe", diff = view === "diff";
+    $("compare-side").hidden = swipe || diff;
     $("compare-swipe").hidden = !swipe;
-    if (swipe) layoutSwipe(); else layoutSide();
+    $("compare-diff").hidden = !diff;
+    if (swipe) layoutSwipe(); else if (diff) layoutDiff(); else layoutSide();
     $("viewhint").textContent = swipe ? "Drag the divider (or use the arrow keys) to compare the same spot."
+      : diff ? "Shows what changed. Raise Amplify to reveal small changes."
       : zoom ? "Both panes show the same spot. Drag or scroll either one."
       : "Both images are shown at the same scale, so resizing is visible.";
   };
@@ -265,7 +282,7 @@
   };
 
   // Keep the same point centred when switching zoom levels.
-  const scroller = () => (view === "swipe" ? stage : panes[0]);
+  const scroller = () => ({ swipe: stage, diff: diffStage }[view] || panes[0]);
   document.querySelectorAll("input[name=zoom]").forEach((radio) => radio.addEventListener("change", () => {
     const el = scroller();
     const cx = (el.scrollLeft + el.clientWidth / 2) / (el.scrollWidth || 1);
@@ -295,8 +312,8 @@
     });
   });
 
-  // Drag to pan when zoomed (side by side).
-  panes.forEach((pane) => {
+  // Drag to pan when zoomed (side by side and difference).
+  [...panes, diffStage].forEach((pane) => {
     let drag = null;
     pane.addEventListener("pointerdown", (e) => {
       if (!zoom || e.button !== 0) return;
@@ -339,6 +356,79 @@
   });
   setSplit(50);
 
+  // Difference map. Both images are drawn onto white at the Before's size (as
+  // in Swipe), so transparency flattened to white doesn't count as a change.
+  // The largest per-channel change of each pixel is kept, and Amplify only
+  // re-colours that, without redrawing the images. Very large images are
+  // compared at a reduced size to keep memory use reasonable.
+  const DIFF_MAX_PIXELS = 16_000_000;
+
+  const drawOnWhite = (img, w, h) => {
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h).data;
+  };
+
+  const computeDiff = () => {
+    const b = sizeOf(imgs[0]), a = sizeOf(imgs[1]);
+    if (!b || !a) { diffData = null; $("diff-stats").textContent = ""; return; }
+    const src = imgs[1].currentSrc;
+    if (diffData?.src === src) return renderDiff();
+    const k = Math.min(1, Math.sqrt(DIFF_MAX_PIXELS / (b.w * b.h)));
+    const w = Math.max(1, Math.round(b.w * k)), h = Math.max(1, Math.round(b.h * k));
+    const before = drawOnWhite(imgs[0], w, h), after = drawOnWhite(imgs[1], w, h);
+    const n = w * h, delta = new Uint8Array(n), base = new Uint8Array(n);
+    let sq = 0, changed = 0;
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const dr = before[p] - after[p], dg = before[p + 1] - after[p + 1], db = before[p + 2] - after[p + 2];
+      sq += dr * dr + dg * dg + db * db;
+      const d = Math.max(Math.abs(dr), Math.abs(dg), Math.abs(db));
+      delta[i] = d;
+      if (d > 5) changed++;
+      base[i] = (before[p] * 77 + before[p + 1] * 150 + before[p + 2] * 29) >> 8;
+    }
+    diffData = { src, w, h, delta, base };
+    const mse = sq / (n * 3);
+    const psnr = mse ? `${(10 * Math.log10(255 * 255 / mse)).toFixed(1)} dB` : "identical";
+    const resized = a.w !== b.w || a.h !== b.h;
+    $("diff-stats").textContent = [
+      `PSNR ${psnr} (higher is closer; above about 40 dB is hard to see)`,
+      `${(changed / n * 100).toFixed(1)}% of pixels changed by more than 2%`,
+      resized ? "After scaled to the original's size, so scaling itself shows up as change" : null,
+      k < 1 ? `compared at ${w}×${h}` : null,
+    ].filter(Boolean).join(" · ");
+    renderDiff();
+  };
+
+  // Changes glow red, then yellow, over a dim copy of the Before for orientation.
+  const renderDiff = () => {
+    if (!diffData) return;
+    const { w, h, delta, base } = diffData;
+    const amp = Number($("amp").value);
+    if (diffCanvas.width !== w || diffCanvas.height !== h) { diffCanvas.width = w; diffCanvas.height = h; }
+    const ctx = diffCanvas.getContext("2d");
+    const out = ctx.createImageData(w, h), px = out.data;
+    for (let i = 0, p = 0; i < delta.length; i++, p += 4) {
+      const t = Math.min(1, delta[i] * amp / 255), g = base[i] * 0.18;
+      px[p] = g + (255 - g) * t;
+      px[p + 1] = g + (255 - g) * t * t;
+      px[p + 2] = g * (1 - t);
+      px[p + 3] = 255;
+    }
+    ctx.putImageData(out, 0, 0);
+  };
+
+  $("amp").addEventListener("input", () => {
+    $("ampval").textContent = `${$("amp").value}×`;
+    renderDiff();
+  });
+  $("amp").addEventListener("dblclick", () => {
+    $("amp").value = 10; $("ampval").textContent = "10×"; renderDiff();
+  });
+
   // --- File selection ---------------------------------------------------------
 
   const validate = (file) => {
@@ -364,9 +454,9 @@
     if (pending) { pending.abort(); pending = null; go.textContent = "Optimize"; }
     showBefore(file);
     resetAfter();
-    // Swipe needs an After image, which a new file doesn't have yet.
-    $("view-swipe").disabled = true;
-    if (view === "swipe") setView("side");
+    // Swipe and Difference need an After image, which a new file doesn't have yet.
+    $("view-swipe").disabled = $("view-diff").disabled = true;
+    if (view !== "side") setView("side");
     scheduleAuto();
     render();
   };
@@ -489,7 +579,7 @@
       $("img-new").src = newUrl; $("img-new").hidden = false; $("ph-new").hidden = true;
       $("sw-after").src = newUrl;
       if (oldUrl) URL.revokeObjectURL(oldUrl);
-      $("view-swipe").disabled = false;
+      $("view-swipe").disabled = $("view-diff").disabled = false;
       resultFor = snapshot(s);
 
       const cd = h("Content-Disposition") || "";

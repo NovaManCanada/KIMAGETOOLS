@@ -157,3 +157,12 @@ button.link {
   background: none; border: 0; padding: 0; color: var(--accent); font-weight: 600; font-size: .85rem;
   cursor: pointer; text-decoration: underline;
 }
+
+/* Difference view: a map of what compression and adjustments changed */
+.diff-bar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 6px 20px; font-weight: 400; margin-bottom: 8px; }
+.diff-amp { display: flex; flex-direction: column; min-width: 200px; font-weight: 600; font-size: .9rem; }
+.diff-stats { margin: 0 0 8px; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.diff-stage { height: 460px; background: #000; }
+.diff-stage canvas { flex: none; display: block; }
+.diff-stage.zoomed canvas { margin: 0; }
+.diff-stage.pixelated canvas { image-rendering: pixelated; }
