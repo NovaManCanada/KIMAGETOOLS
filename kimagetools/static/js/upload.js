@@ -53,6 +53,16 @@
     };
   };
 
+  const settingControls = () => [...form.elements].filter((el) => el.name && el !== fileInput);
+  const isDefault = (el) => {
+    if (el.type === "checkbox" || el.type === "radio") return el.checked === el.defaultChecked;
+    if (el.tagName === "SELECT") {
+      const i = [...el.options].findIndex((o) => o.defaultSelected);
+      return el.selectedIndex === Math.max(0, i);
+    }
+    return el.value === el.defaultValue;
+  };
+
   const snapshot = (s) => JSON.stringify([s.format, s.preset, s.quality, s.scale,
                                           s.strip, s.orient, s.lossless, s.reduce, s.denoise,
                                           ...ADJ.map((k) => s[k])]);
@@ -117,6 +127,7 @@
     $("scaleval").textContent = s.scale + "%";
     for (const k of ADJ) $(`${k}-val`).textContent = adjustmentValue(k, s[k]);
     $("adj-reset").hidden = ADJ.every((k) => s[k] === 0);
+    $("reset-all").disabled = settingControls().every(isDefault);
     $("format-keep").textContent = s.source ? `Keep original (${NAMES[s.source]})` : "Keep original format";
     const out = outputSize(s);
     $("scalehint").textContent = out && s.scale !== 100
@@ -469,6 +480,20 @@
     scheduleAuto();
     render();
   };
+  // "Reset to recommended" puts every setting back to its value in the page's
+  // HTML (Balanced, quality 85, metadata stripped, ...), so the template is the
+  // one place those recommendations live. The chosen file and the auto-update
+  // toggle (which has no name) are left alone.
+  $("reset-all").addEventListener("click", () => {
+    for (const el of settingControls()) {
+      if (el.type === "checkbox" || el.type === "radio") el.checked = el.defaultChecked;
+      else if (el.tagName === "SELECT") {
+        el.selectedIndex = Math.max(0, [...el.options].findIndex((o) => o.defaultSelected));
+      } else el.value = el.defaultValue;
+    }
+    $("quality").dispatchEvent(new Event("change", { bubbles: true }));
+    go.focus();
+  });
   $("adj-reset").addEventListener("click", () => {
     for (const k of ADJ) $(k).value = "0";
     $(ADJ[0]).dispatchEvent(new Event("change", { bubbles: true }));

@@ -61,6 +61,7 @@ button, a.btn {
   cursor: pointer; text-decoration: none; display: inline-block;
 }
 button:disabled { opacity: .5; cursor: not-allowed; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 9px 17px; }
 #error { color: var(--bad); margin: 12px 0 0; }
 #error:empty { display: none; }
 .stats { display: flex; flex-wrap: wrap; gap: 12px 32px; margin-bottom: 16px; }

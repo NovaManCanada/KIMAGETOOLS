@@ -151,3 +151,26 @@ Implementing advanced features.
   - **Firefox (Playwright):** real clicks on the sliders, using the previous session's scratchpad env.
   - **Trail-cam photo:** q85 gives 35.6 dB and q1 gives 20.6 dB. The JPEG block grid and ringing are clearly visible at q85.
   - **Also verified:** 200% zoom scrolls and drag-pans, and a new file falls back to Side by side.
+
+SESSION 3 Focus:
+
+Additional feature:
+
+- Add a button to reset all inputs back to good best practice values
+
+### Session 3, part 2: Reset to recommended
+
+- **What it does:** a **Reset to recommended** button next to Optimize puts every setting back to:
+  - Balanced preset, quality 85
+  - keep the original format and size
+  - denoise off, all adjustments at 0
+  - strip metadata and auto-orient on
+  - lossless WebP off, reduce PNG colours on
+- **Defaults come from the HTML:** these are the page's initial values. The button restores each named control's `defaultValue`, `defaultChecked` or `defaultSelected` instead of keeping a second copy in JS, so **changing a default in `index.html` changes what Reset does**. A test pins the current values.
+- **What it leaves alone:**
+  - The file and the auto-update toggle are untouched. The toggle has no `name`, so it's skipped.
+  - `form.reset()` isn't used because it would clear the file input.
+- **When it's enabled:** the button is disabled while everything is already at the defaults. A reset fires one change event, so auto-update sends a single request.
+- **Checks:** 118 tests pass. Firefox with real input: 10 settings changed, then one click restored all of them and sent one request with the recommended values.
+- **Pitfall:** `pkill -f 'flask --app app run'` inside a longer Bash command also matches that shell's own command line and kills it. Stop the server in a separate command.
+

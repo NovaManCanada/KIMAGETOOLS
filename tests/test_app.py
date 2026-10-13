@@ -361,6 +361,24 @@ def test_index_offers_comparison_views(client):
     assert 'id="diff-canvas"' in html and 'id="amp"' in html
 
 
+def test_index_recommended_defaults(client):
+    # "Reset to recommended" restores each control's value from this markup,
+    # so these defaults are what the button resets to.
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="reset-all"' in html
+    assert 'name="preset" value="balanced" checked' in html
+    assert 'id="quality" min="1" max="95" value="85"' in html
+    assert 'id="scale" min="10" max="200" step="5" value="100"' in html
+    assert '<option value="original" id="format-keep">' in html
+    assert 'name="strip_metadata" value="1" checked' in html
+    assert 'name="auto_orient" value="1" checked' in html
+    assert 'name="lossless" value="1">' in html
+    assert 'name="reduce_colors" value="1" checked' in html
+    for name in ("brightness", "contrast", "blur", "sharpen"):
+        assert f'id="{name}" min=' in html
+    assert html.count('value="0" data-adjust') == 4
+
+
 @pytest.mark.parametrize("mode", ["RGB", "RGBA"])
 def test_opencv_roundtrip(mode):
     img = Image.effect_noise((32, 24), 50).convert(mode)
