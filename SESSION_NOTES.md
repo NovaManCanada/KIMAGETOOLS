@@ -16,6 +16,17 @@ python3 -m venv .venv
 .venv/bin/pytest                   # 95 tests
 ```
 
+On Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\flask.exe --app app run      # http://127.0.0.1:5000
+.venv\Scripts\python.exe -m pytest         # 118 tests
+```
+
+If `python` opens the Microsoft Store, Python isn't really installed. Install it with `winget install --id Python.Python.3.12 -e --scope user`, then use `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` to create the venv. The new install isn't on PATH until you open a new terminal.
+
 The dev server runs without debug mode, so **template changes need a server restart**. CSS/JS changes only need a browser refresh, since static files are served with `Cache-Control: no-cache`.
 
 ## How the requirements evolved
@@ -111,6 +122,7 @@ There are no browser tests in the repo. Checks were run with Playwright from a t
 
 - Git has no global identity configured on this machine. The commit used `NovaManCanada <jamesurie@storm.ca>` from the repo's history, passed for that commit only.
 - `.claude/` (local plugin settings) is intentionally untracked.
+- **Windows machine (2026-10-15):** had no Python, only the Microsoft Store placeholder. Python 3.12.10 was installed per-user via winget, then `.venv` was set up and all 118 tests pass. The `pkill` pitfall from session 3 doesn't apply here. On Windows, stop the server with Ctrl+C or by ending the `flask.exe` process.
 
 SESSION 2 Focus:
 
