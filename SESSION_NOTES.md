@@ -13,7 +13,7 @@ See `README.md` for features, configuration and the API. These notes record *how
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/flask --app app run      # http://127.0.0.1:5000
-.venv/bin/pytest                   # 95 tests
+.venv/bin/pytest                   # 118 tests
 ```
 
 On Windows (PowerShell):
@@ -25,7 +25,9 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pytest         # 118 tests
 ```
 
-If `python` opens the Microsoft Store, Python isn't really installed. Install it with `winget install --id Python.Python.3.12 -e --scope user`, then use `%LOCALAPPDATA%\Programs\Python\Python312\python.exe` to create the venv. The new install isn't on PATH until you open a new terminal.
+This machine's Python is 3.15 at `C:\Python315` (`py -0p` lists what's installed). Bare `python` may still open the Microsoft Store placeholder, so create the venv with the full path: `C:\Python315\python.exe -m venv .venv`.
+
+If the venv fails with `No Python at '...python.exe'`, the Python it was built from has been uninstalled. Delete `.venv` and recreate it as above, then reinstall the requirements.
 
 The dev server runs without debug mode, so **template changes need a server restart**. CSS/JS changes only need a browser refresh, since static files are served with `Cache-Control: no-cache`.
 
@@ -123,6 +125,7 @@ There are no browser tests in the repo. Checks were run with Playwright from a t
 - Git has no global identity configured on this machine. The commit used `NovaManCanada <jamesurie@storm.ca>` from the repo's history, passed for that commit only.
 - `.claude/` (local plugin settings) is intentionally untracked.
 - **Windows machine (2026-10-15):** had no Python, only the Microsoft Store placeholder. Python 3.12.10 was installed per-user via winget, then `.venv` was set up and all 118 tests pass. The `pkill` pitfall from session 3 doesn't apply here. On Windows, stop the server with Ctrl+C or by ending the `flask.exe` process.
+- **Python 3.15 (2026-10-16):** Python 3.12 had since been uninstalled, which broke `.venv`. It was rebuilt with Python 3.15 from `C:\Python315`, and the requirements installed without problems. All 118 tests pass.
 
 SESSION 2 Focus:
 
